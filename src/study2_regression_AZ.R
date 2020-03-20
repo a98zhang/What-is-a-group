@@ -173,4 +173,42 @@ for (i in 1:length(curr_kmean$size)){
   }
 }
 
+# ---------------------------------------------------------------------------- #
+# 5. Averaging to solve variability in cv-glmnet (added 03/18/2020)
 
+#### instead of using the generated, we just here simulate 100 times (newly)
+curr_kmean <- all_kmeans[[3]]
+
+all_coefs <- data.frame(row.names=colnames(data))
+all_coefs[, 1:3] <- 0
+# for each cluster apply a binomial logistic regression model
+for (j in 1:length(curr_kmean$size)){
+  y <- (curr_kmean$cluster == j)*1
+  y <- as.factor(y)
+  
+  # for each model perform 100 times simulation
+  lambdas = NULL
+  for (i in 1:100){
+    cvfit <- cv.glmnet(data, y, family = "binomial", type.measure = "class")
+    errors <- data.frame(cvfit$lambda, cvfit$cvm)
+    lambdas <- rbind(lambdas, errors)
+  }
+  
+  # take mean cvm for each lambda
+  lambdas <- aggregate(lambdas[, 2], list(lambdas$cvfit.lambda), mean)
+  
+  # select the best one
+  bestindex = which(lambdas[2]==min(lambdas[2]))[1]
+  bestlambda = lambdas[bestindex,1]
+  
+  # and now run glmnet once more with it
+  fit <- glmnet(data, y, family = "binomial", type.measure = "class", lambda=bestlambda)
+  all_coefs[, j] <- fit$beta[, 1]
+  
+  # set the column name
+  curr_groups <- groups[curr_kmean$cluster == j,][1]
+  colnames(all_coefs)[j] <- labelsToString(curr_groups[,1])
+}
+
+# save in csv
+write.csv(all_coefs,"C:/Users/ashle/R/study2/June8/simulated.csv", row.names = TRUE)
