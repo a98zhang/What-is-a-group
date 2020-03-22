@@ -86,7 +86,7 @@ df_reduced <- df.pca$scores[1:30, 1:2]
 clusplot(df_reduced,all_models[[3]]$cluster,color=TRUE,shade=TRUE,labels=2, 
          lines=0,main="PCA - Group Categories Data")
 library(NbClust)
-nb_reduced <- NbClust(data = df, distance = "euclidean", min.nc = 2, 
+nb_reduced <- NbClust(data = df_reduced, distance = "euclidean", min.nc = 2, 
         max.nc = 10,method = "kmeans", index="all")
 fviz_nbclust(nb_reduced)
 km.res_reduced <- kmeans(df_reduced, 3, nstart = 25 )
