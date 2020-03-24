@@ -1,29 +1,18 @@
 # ---------------------------------------------------------------------------- #
 # I. Preparatory: packages and helper functions
 
-# load packages: for data outputing, wrangling, LASSO, PCA plotting, Clustering
+# load packages: for data outputing, wrangling, LASSO, Clustering
 
 library(openxlsx)
 library(readxl)
 library(writexl)
 library(dplyr)
 library(multicon)
-library(glmnet)
-library(selectiveInference)
-library(devtools)
-#install_github("vqv/ggbiplot")
-library(ggbiplot)
-library(ggthemes)
-library(factoextra)
 library(cluster)
+library(factoextra)
 library(NbClust)
-library(ggplot2)
-library(corrplot)
-library(ggpubr)
-library(FactoMineR)
-library(clustertend)
-library (fpc)
-library (clValid)
+library(glmnet)
+#library(selectiveInference)
 
 # helper fn: Convert a vector of strings into one-dimensional string
 
@@ -124,7 +113,7 @@ simulateClusterings <- function(data, models_per_k=100, k_range=3,
 
 # helper fn: find most common solution
 
-findMostCommonClustering <- function(data, labels, all_models) {
+findMostCommonClustering <- function(labels, all_models, saveSolutions=NULL) {
   
   # 0. create an empty list for all clustering solutions
   solutions <- list()
@@ -160,6 +149,22 @@ findMostCommonClustering <- function(data, labels, all_models) {
   
   chosen_solutions <- class_solutions[[which.max(lengths(class_solutions))]]
   chosen_kmeans <- all_models[chosen_solutions]
+  
+  # 4. save emerged solutions
+  
+  
+  if (!is.null(saveSolutions)) {
+    
+    freq <- as.character(lengths(class_solutions))
+    emerged_solutions <- data.frame(labels)
+    
+    for (i in 1:length(class_solutions)) {
+      curr_kmean <- all_models[[class_solutions[[i]][1]]]
+      emerged_solutions[[freq[i]]] <- curr_kmean$cluster
+    }
+    
+    write.csv(emerged_solutions, saveSolutions, row.names=F)
+  }
   
   return(chosen_kmeans[[1]])
   
@@ -220,7 +225,7 @@ simulateLogReg <- function(data, kmean_model, saveBetas=NULL){
     write.csv(all_coefs, saveBetas, row.names = TRUE)
   }
   
-  return (sigtest)
+  return (all_coefs)
   
 }
 
@@ -258,12 +263,14 @@ all_models <- simulateClusterings(data, models_per_k=100, k_range=nc,
 
 
 # 4. find the most common solutions 
-curr_kmean <- findMostCommonClustering(data, labels, all_models)
+curr_kmean <- findMostCommonClustering(labels, all_models,
+                                       saveSolutions='out/Solutions_study1.csv'
+                                       )
 saveRDS(curr_kmean,"out/kmean_study1.rds")
 
 # 5. simulate LASSO logistic regressions modeling the cluster membership
 betas <- simulateLogReg(data, kmean_model=curr_kmean, 
-                        saveBetas='out/LASSO_study1.csv'
+                        #saveBetas='out/LASSO_study1.csv'
                         )
 
 
@@ -282,7 +289,7 @@ rownames(data) <- labels
 
 
 # 1. determine the number of principal components 
-png('out/horn_study1.png')
+png('out/horn_study2.png')
 horn(data, sims = 100)
 dev.off()
 
@@ -292,7 +299,7 @@ nb <- NbClust(data = data, distance = "euclidean", min.nc = 2,
 fviz_nbclust(nb, barfill="#0084d1", barcolor="#0084d1") + 
   ggtitle("Bar Graph for NbClust Solution") + 
   theme(plot.title = element_text(hjust=0.5))
-ggsave("out/nbclust_study1.png", width = 5, height = 5)
+ggsave("out/nbclust_study2.png", width = 5, height = 5)
 
 
 nc <- 3 # nbclust suggesting 3 
@@ -303,12 +310,102 @@ all_models <- simulateClusterings(data, models_per_k=100, k_range=nc,
 
 
 # 4. find the most common solutions 
-curr_kmean <- findMostCommonClustering(data, labels, all_models)
+curr_kmean <- findMostCommonClustering(labels, all_models,
+                                       saveSolutions='out/Solutions_study2.csv'
+                                       )
 saveRDS(curr_kmean,"out/kmean_study2.rds")
 
 # 5. simulate LASSO logistic regressions modeling the cluster membership
 betas <- simulateLogReg(data, kmean_model=curr_kmean, 
-                        saveBetas='out/LASSO_study2.csv'
+                        #saveBetas='out/LASSO_study2.csv'
                         )
 
+# ---------------------------------------------------------------------------- #
+# IV. Study 1 - dimension reduced
+
+# 0. import data and models for study 1
+rm(list = setdiff(ls(), lsf.str()))
+
+groups <- read.csv('data/group_study1.csv')
+
+labels <- groups[, 1]            # first column (group name) as row names 
+data <- scale(as.matrix(groups[-1]))
+rownames(data) <- labels 
+
+# 1. conduct PCA to reduce dimensions
+pca <- princomp(data)
+data_pc <- pca$scores[,1:2]
+
+# 2. determine the number of clusters 
+nb <- NbClust(data = data_pc, distance = "euclidean", min.nc = 2, 
+              max.nc = 8, method = "kmeans")
+fviz_nbclust(nb, barfill="#0084d1", barcolor="#0084d1") + 
+  ggtitle("Bar Graph for NbClust Solution") + 
+  theme(plot.title = element_text(hjust=0.5))
+ggsave("out/nbclust_pc_study1.png", width = 5, height = 5)
+
+
+nc <- 3 # nbclust suggesting 3 
+
+# 3. simulate k-means cluster
+all_models <- simulateClusterings(data_pc, models_per_k=100, k_range=nc,
+                                  cluster_min=3, saveModels=F, savePlots=F)
+
+
+# 4. find the most common solutions 
+curr_kmean <- findMostCommonClustering(labels, all_models,
+                                       saveSolutions='out/Solutions_pc_study1.csv'
+                                       )
+saveRDS(curr_kmean,"out/kmean_pc_study1.rds")
+
+# 5. simulate LASSO logistic regressions modeling the cluster membership
+betas <- simulateLogReg(data, kmean_model=curr_kmean, 
+                        #saveBetas='out/LASSO_pc_study1.csv'
+)
+
+
+
+# ---------------------------------------------------------------------------- #
+# V. Study 2 - dimension reduced
+
+# 0. import data and models for study 2
+rm(list = setdiff(ls(), lsf.str()))
+
+groups <- read.csv('data/group_study2.csv')
+
+labels <- groups[, 1]            # first column (group name) as row names 
+data <- scale(as.matrix(groups[-1]))
+rownames(data) <- labels 
+
+
+# 1. conduct PCA to reduce dimensions
+pca <- princomp(data)
+data_pc <- pca$scores[,1:2]
+
+# 2. determine the number of clusters 
+nb <- NbClust(data = data_pc, distance = "euclidean", min.nc = 2, 
+              max.nc = 8, method = "kmeans")
+fviz_nbclust(nb, barfill="#0084d1", barcolor="#0084d1") + 
+  ggtitle("Bar Graph for NbClust Solution") + 
+  theme(plot.title = element_text(hjust=0.5))
+ggsave("out/nbclust_pc_study2.png", width = 5, height = 5)
+
+
+nc <- 3 # nbclust suggesting 3 
+
+# 3. simulate k-means cluster
+all_models <- simulateClusterings(data_pc, models_per_k=100, k_range=nc,
+                                  cluster_min=3, saveModels=F, savePlots=F)
+
+
+# 4. find the most common solutions 
+curr_kmean <- findMostCommonClustering(labels, all_models,
+                                       saveSolutions='out/Solutions_pc_study2.csv'
+                                       )
+saveRDS(curr_kmean,"out/kmean_pc_study2.rds")
+
+# 5. simulate LASSO logistic regressions modeling the cluster membership
+betas <- simulateLogReg(data, kmean_model=curr_kmean, 
+                        #saveBetas='out/LASSO_pc_study2.csv'
+)
 
